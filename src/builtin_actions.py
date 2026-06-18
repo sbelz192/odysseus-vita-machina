@@ -1583,7 +1583,7 @@ async def action_check_email_urgency(owner: str, **kwargs) -> Tuple[str, bool]:
                             if not raw:
                                 continue
                             msg = _email_mod.message_from_bytes(raw)
-                            # Skip Odysseus-generated reminders so the Vita Machina scanner
+                            # Skip Odysseus-generated reminders so the Odysseus scanner
                             # doesn't classify its own emails as urgent and
                             # trigger a feedback loop. Match on either the
                             # stamped headers OR the subject prefix.

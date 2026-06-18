@@ -29,6 +29,25 @@ def _invalidate_caches():
 # ── Default values ──
 
 DEFAULT_SETTINGS = {
+    # ── Branding ──────────────────────────────────────────────────────
+    # Display name for the app in the sidebar, welcome screen, and
+    # input placeholder.  Also used for the <title> tag and any label
+    # that references the application.
+    "app_name": "Odysseus",
+    # Custom logo shown in the sidebar brand area (above "New chat").
+    # One of:
+    #   - "default"         → the built-in boat SVG (default)
+    #   - "hide"            → title text only, no logo
+    #   - "data:image/..."  → a data-URI (PNG, JPEG, GIF, WebP, SVG)
+    #   - "https://..."     → an external image URL
+    # The frontend renders this inside the sidebar-brand container with
+    # max-height: 24px so it stays aligned with the text.
+    "app_logo": "default",
+    # Custom favicon / apple-touch-icon. Same value semantics as
+    # app_logo (default / hide / data-URI / URL).  When "default",
+    # the per-route dynamic favicon from theme.js is used.
+    "app_icon": "default",
+
     # Agent email safety: when True, the MCP send_email / reply_to_email
     # tools don't SMTP directly. They stage the composed message into the
     # scheduled_emails table with status='agent_draft' and return a

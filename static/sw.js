@@ -1,4 +1,4 @@
-// static/sw.js — Vita Machina PWA Service Worker
+// static/sw.js — Odysseus PWA Service Worker
 // Strategy:
 //   - HTML (navigation): stale-while-revalidate. Instant open from cache,
 //     background refresh so the next open has latest HTML.
