@@ -91,7 +91,7 @@ async function _createDirectChatFromPreferredModel() {
   if (!sessionModule) return false;
 
   const pending = sessionModule.getPendingChat && sessionModule.getPendingChat();
-  if (pending && pending.url && pending.modelId) {
+  if (pending && pending.url && pending.modelId && pending.endpointId) {
     sessionModule.createDirectChat(pending.url, pending.modelId, pending.endpointId);
     return true;
   }
@@ -99,7 +99,7 @@ async function _createDirectChatFromPreferredModel() {
   const sessions = sessionModule.getSessions();
   const currentId = sessionModule.getCurrentSessionId();
   const current = sessions.find(s => s.id === currentId);
-  if (current && current.endpoint_url && current.model) {
+  if (current && current.endpoint_url && current.model && current.endpoint_id) {
     sessionModule.createDirectChat(current.endpoint_url, current.model, current.endpoint_id);
     return true;
   }
@@ -1110,6 +1110,177 @@ function initializeEventListeners() {
       if (tm) tm.classList.remove('hidden');
     });
   }
+
+
+  // ── Service Logs Viewer ──────────────────────────────────────────────
+  const toolServicesBtn = el('tool-services-btn');
+  if (toolServicesBtn) {
+    toolServicesBtn.addEventListener('click', () => {
+      const sm = document.getElementById('services-modal');
+      if (sm) {
+        sm.classList.remove('hidden');
+        // Auto-load last active service or default to ollama
+        const activeTab = sm.querySelector('.service-tab.active') || sm.querySelector('[data-service="ollama"]');
+        if (activeTab) {
+          const service = activeTab.dataset.service;
+          loadServiceLogs(service, true);
+        }
+      }
+    });
+  }
+
+  let svcCurrentService = 'ollama';
+  let svcLogsCache = [];
+  let svcPollInterval = null;
+  let svcIsPolling = false;
+
+  // Tab switching
+  document.addEventListener('click', (e) => {
+    const tab = e.target.closest('.service-tab');
+    if (!tab) return;
+    const modal = document.getElementById('services-modal');
+    if (!modal || modal.classList.contains('hidden')) return;
+
+    // Update active tab style
+    modal.querySelectorAll('.service-tab').forEach(t => {
+      t.style.background = '';
+      t.style.color = '';
+      t.style.fontWeight = '';
+    });
+    tab.style.background = 'var(--red)';
+    tab.style.color = '#fff';
+    tab.style.fontWeight = '600';
+
+    svcCurrentService = tab.dataset.service;
+    loadServiceLogs(svcCurrentService, true);
+  });
+
+  async function loadServiceLogs(service, preserveScroll = false) {
+    const consoleEl = document.getElementById('svc-log-console');
+    if (!consoleEl) return;
+
+    const limitSelect = document.getElementById('svc-log-limit');
+    const limit = limitSelect ? limitSelect.value : 200;
+
+    try {
+      consoleEl.innerHTML = '<div style="opacity:0.5;">Loading logs...</div>';
+      const res = await fetch('/api/diagnostics/service-logs/' + service + '?limit=' + limit, {
+        credentials: 'same-origin'
+      });
+      if (!res.ok) {
+        consoleEl.innerHTML = '<div style="color:var(--red);font-weight:600;">Failed to load logs: HTTP ' + res.status + '</div>';
+        return;
+      }
+      const data = await res.json();
+      if (data.status !== 'success' || !data.logs) {
+        consoleEl.innerHTML = '<div style="color:var(--red);font-weight:600;">Failed to parse logs data</div>';
+        return;
+      }
+      svcLogsCache = data.logs;
+      renderServiceLogs(data.logs, preserveScroll);
+    } catch (err) {
+      consoleEl.innerHTML = '<div style="color:var(--red);font-weight:600;">Error: ' + err.message + '</div>';
+    }
+  }
+
+  function renderServiceLogs(logs, preserveScroll = false) {
+    const consoleEl = document.getElementById('svc-log-console');
+    const searchInput = document.getElementById('svc-log-search');
+    if (!consoleEl) return;
+
+    const searchQuery = searchInput ? searchInput.value.trim().toLowerCase() : '';
+    let filtered = logs;
+    if (searchQuery) {
+      filtered = logs.filter(line => line.toLowerCase().includes(searchQuery));
+    }
+
+    const atBottom = consoleEl.scrollHeight - consoleEl.scrollTop - consoleEl.clientHeight < 40;
+
+    if (filtered.length === 0) {
+      consoleEl.innerHTML = '<div style="opacity:0.5;">' + (searchQuery ? 'No logs match your search.' : 'No logs yet. Start the services first!') + '</div>';
+      return;
+    }
+
+    consoleEl.innerHTML = filtered.map(line => {
+      let color = '#00ff41'; // default green
+      if (line.includes('[error]') || line.includes('Error:') || line.includes('ERROR') || line.includes('CRITICAL')) {
+        color = '#ff4444';
+      } else if (line.includes('[warn]') || line.includes('WARNING') || line.includes('WARN')) {
+        color = '#ffaa00';
+      } else if (line.includes('[info]') || line.includes('INFO')) {
+        color = '#00ccff';
+      } else if (line.includes('[debug]') || line.includes('DEBUG')) {
+        color = '#8888ff';
+      }
+      const escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return '<div style="color:' + color + ';">' + escaped + '</div>';
+    }).join('');
+
+    if (!preserveScroll || atBottom) {
+      consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+  }
+
+  function startSvcPolling() {
+    if (svcIsPolling) return;
+    svcIsPolling = true;
+    const toggle = document.getElementById('svc-log-autopoll');
+    if (toggle) toggle.checked = true;
+
+    svcPollInterval = setInterval(() => {
+      const modal = document.getElementById('services-modal');
+      if (!modal || modal.classList.contains('hidden')) {
+        stopSvcPolling();
+        return;
+      }
+      loadServiceLogs(svcCurrentService, true);
+    }, 3000);
+  }
+
+  function stopSvcPolling() {
+    if (!svcIsPolling) return;
+    svcIsPolling = false;
+    if (svcPollInterval) {
+      clearInterval(svcPollInterval);
+      svcPollInterval = null;
+    }
+    const toggle = document.getElementById('svc-log-autopoll');
+    if (toggle) toggle.checked = false;
+  }
+
+  // Wire up events for search, limit, refresh, autopoll
+  document.addEventListener('change', (e) => {
+    if (e.target.id === 'svc-log-limit') {
+      loadServiceLogs(svcCurrentService, false);
+    }
+  });
+  document.addEventListener('input', (e) => {
+    if (e.target.id === 'svc-log-search') {
+      renderServiceLogs(svcLogsCache, false);
+    }
+  });
+  document.addEventListener('click', (e) => {
+    if (e.target.id === 'svc-log-refresh' || e.target.closest('#svc-log-refresh')) {
+      loadServiceLogs(svcCurrentService, false);
+    }
+  });
+  document.addEventListener('change', (e) => {
+    if (e.target.id === 'svc-log-autopoll') {
+      if (e.target.checked) {
+        startSvcPolling();
+      } else {
+        stopSvcPolling();
+      }
+    }
+  });
+
+  // Stop polling when modal is closed
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('#services-modal .close-btn')) {
+      stopSvcPolling();
+    }
+  });
+
 
   // Sidebar toggle
   const toggleSidebarOption = el('toggle-sidebar-option');
@@ -2436,7 +2607,7 @@ function initializeEventListeners() {
   };
 
   // Keys hidden by default on first run (no localStorage yet)
-  const UI_VIS_DEFAULT_OFF = new Set(['models-section', 'rag-toggle-btn', 'text-emojis']);
+  const UI_VIS_DEFAULT_OFF = new Set(['models-section', 'rag-toggle-btn', 'text-emojis', 'chat-fullwidth']);
 
   // Keys that need admin to toggle off (reserved for future use)
   const UI_VIS_ADMIN_ONLY = new Set([]);
@@ -2469,6 +2640,8 @@ function initializeEventListeners() {
     applyTextEmojis(state['text-emojis'] === true);
     // Hide thinking sections toggle (show-thinking: checked=show, unchecked=hide)
     document.body.classList.toggle('hide-thinking', state['show-thinking'] === false);
+    // Fullwidth chat toggle (chat-fullwidth: checked=fullwidth, unchecked=big-padding
+    document.body.classList.toggle('fullwidth-chat', state['chat-fullwidth'] === true);
   }
 
   // Rearrange toggles in session/model sort dropdowns
