@@ -53,6 +53,31 @@ def setup_diagnostics_routes(
             logger.error(f"Diagnostics logs retrieval error: {e}")
             raise HTTPException(500, f"Failed to retrieve logs: {str(e)}")
 
+    @router.get("/api/diagnostics/service-logs/{service}")
+    async def get_service_logs(request: Request, service: str, limit: int = 200) -> Dict[str, Any]:
+        """Tail the log file of an external service (ollama, odysseus)."""
+        require_admin(request)
+        if service not in ("ollama", "odysseus"):
+            raise HTTPException(400, f"Unknown service: {service}. Supported: ollama, odysseus")
+        limit = max(1, min(limit, 1000))
+        try:
+            log_file = os.path.join(DATA_DIR, "logs", f"{service}.log")
+            if not os.path.exists(log_file):
+                return {"status": "success", "logs": [], "service": service}
+            with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+                lines = f.readlines()
+            tail_lines = lines[-limit:] if len(lines) > limit else lines
+            tail_lines = [line.rstrip(chr(13) + chr(10)) for line in tail_lines]
+            return {
+                "status": "success",
+                "service": service,
+                "logs": tail_lines,
+                "total_lines": len(lines)
+            }
+        except Exception as e:
+            logger.error(f"Service logs retrieval error ({service}): {e}")
+            raise HTTPException(500, f"Failed to retrieve {service} logs: {str(e)}")
+
     @router.get("/api/db/stats")
     async def get_database_stats(request: Request) -> Dict[str, Any]:
         require_admin(request)
