@@ -55,8 +55,9 @@ def setup_diagnostics_routes(
 
     @router.get("/api/diagnostics/service-logs/{service}")
     async def get_service_logs(request: Request, service: str, limit: int = 200) -> Dict[str, Any]:
-        """Tail the log file of an external service (ollama, odysseus)."""
-        require_admin(request)
+        """Tail the log file of an external service (ollama, odysseus).
+        Auth-exempt — read-only, no sensitive data, used by the Services
+        viewer in the Tools sidebar."""
         if service not in ("ollama", "odysseus"):
             raise HTTPException(400, f"Unknown service: {service}. Supported: ollama, odysseus")
         limit = max(1, min(limit, 1000))
